@@ -160,6 +160,7 @@ _alarm_stop:
     push es
     pop ds
     call _uninst_all ; garantujem ti es koji valja
+    call _clear_vid_mem
     pop ds
 .end:
     popa

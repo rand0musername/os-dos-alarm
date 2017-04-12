@@ -26,6 +26,24 @@ _print_int:
     int 10h             ; ispis
     loop .print
 .end:
+    mov al, ' '                        
+    mov  ah, 0Eh                      ; BIOS 10h: ah = 0eh (Teletype Mode), al = znak koji se ispisuje
+    int  10h
+    popa
+    ret
+
+
+; ==================================================
+; Printa novi red
+; ================================================== 
+_newline:
+    pusha
+    mov al, 0Dh                        
+    mov  ah, 0Eh                      ; BIOS 10h: ah = 0eh (Teletype Mode), al = znak koji se ispisuje
+    int  10h
+    mov al, 0Ah                        
+    mov  ah, 0Eh                      ; BIOS 10h: ah = 0eh (Teletype Mode), al = znak koji se ispisuje
+    int  10h
     popa
     ret
 
@@ -121,6 +139,30 @@ _parse_time:
     ret
 
 ; ==================================================
+; Snuzovanje vremena
+; ================================================== 
+
+_snooze_time:
+    pusha
+    mov [cs:valid_time], byte 1
+    mov si, time
+    mov bh, [si]
+    inc si
+    mov bl, [si]
+    inc si
+    mov dl, [si]
+    ; BH BL DL
+    inc bl
+    cmp bl, 60
+    jne .end
+    xor bl, bl
+    inc bh
+    ; ako bh postane 24 jbg
+.end:
+    popa
+    ret
+
+; ==================================================
 ; Parsiranje dvocifrenog inta
 ; in:
 ;      di = pocetak inta
@@ -152,16 +194,18 @@ _parse_2dig_int:
 ; ================================================== 
 
 _diff_time:
-    mov si, [cs:time]
+
+    mov si, time
     mov bh, [si]
     inc si
     mov bl, [si]
     inc si
     mov dl, [si]
     ; BH BL DL - CH CL DH
+
     ; SECONDS
     cmp dl, dh
-    jl .sub_s
+    jge .sub_s
     add dl, 60
     sub bl, 1
 .sub_s:
@@ -169,7 +213,7 @@ _diff_time:
     mov dh, dl
     ; MINUTES
     cmp bl, cl
-    jl .sub_m
+    jge .sub_m
     add bl, 60
     sub bh, 1
 .sub_m:
@@ -179,6 +223,18 @@ _diff_time:
 .sub_h:
     sub bh, ch
     mov ch, bh
+
+
+    ;mov ah, 0
+    ;mov al, ch
+    ;call _print_int
+    ;mov al, cl
+    ;call _print_int
+    ;mov al, dh
+    ;call _print_int
+    ;call _newline
+
+
     ret
 
 
@@ -192,5 +248,4 @@ segment .data
 time: times 3 db 0
 time_rem: times 3 db 0
 valid_time: db 0
-ASCII_ZERO equ 48
 msg_debug: db 'ZEZ', 0

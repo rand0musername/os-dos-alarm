@@ -185,32 +185,23 @@ irt_2F:
 ; ==================================================
 irt_1C:
     pusha
-    
-    call _print_time
-
-    popa
-    iret
-
-
-
-    ; reentrancy pre poziva
+    mov ax, cs
+    mov ds, ax
     cmp [cs:state], byte STATE_OVER
     je .end
     cmp [cs:state], byte STATE_RINGING
     je .ringing
 .active:
-
-    call _print_time
-
     ; reentrancy
     mov ax, [cs:indos_seg]
     mov es, ax
     mov bx, [cs:indos_off]
-    mov ax, [es:bx]
-    or ax, ax
+    mov al, byte [es:bx]
+    or al, al
     jnz .end ; in use
     ; you can go on
-    int 2Ch
+    mov ah, 2Ch
+    int 21h
     ; ch = sati sada, cl = min sada, dh = sekunde sada
     call _diff_time
     ; ch = sati diff, cl = min diff, dh = sekunde diff
@@ -223,8 +214,8 @@ irt_1C:
     ; START RINGING FROM NEXT TURN
     mov [cs:state], byte STATE_RINGING
     mov [cs:ticks_left], byte TICKS_RINGING
-    call _clear_vid_mem
 .draw_prep:
+    call _clear_vid_mem
     call _print_time
     jmp .end
 .ringing:
@@ -233,10 +224,12 @@ irt_1C:
     jz .set_over
     dec al
     mov [cs:ticks_left], byte al
+    call _clear_vid_mem
     call _print_ring
     jmp .end
 .set_over:
     mov [cs:state], byte STATE_OVER
+    ; TODO: da se sam deinstalira pa da ne mora stop
     call _clear_vid_mem
     jmp .end
 .end:
@@ -244,75 +237,20 @@ irt_1C:
     iret
 
 ; ==================================================
-; 09 - VIDEO MEM
-; ==================================================
-
-; ==================================================
-; Stampa vreme u video memoriju
-; ==================================================
-_print_time:
-    mov ax, VID_SEG
-    mov es, ax
-    mov bx, START_POS
-    mov si, dbg_time
-.print:
-    mov al, [si]
-    or al, al
-    je .end
-    mov [es:bx], al
-    inc bx
-    mov [es:bx], byte COLOR
-    inc bx
-    inc si 
-    jmp .print
-.end:
-    ret
-
-; ==================================================
-; Stampa ring u video memoriju, menja boju naa %2
-; ==================================================
-_print_ring:
-    mov ax, VID_SEG
-    mov es, ax
-    mov bx, START_POS
-    mov si, dbg_ring
-.print:
-    mov al, [si]
-    or al, al
-    je .end
-    mov [es:bx], al
-    inc bx
-    mov [es:bx], byte COLOR
-    inc bx
-    inc si 
-    jmp .print
-.end:
-    ret
-
-; ==================================================
-; Clearuje treci red
-; ==================================================
-_clear_vid_mem:
-    mov ax, VID_SEG
-    mov es, ax
-    mov bx, START_POS
-    mov cx, 80
-.print:
-    mov al, SPACE
-    mov [es:bx], al
-    inc bx
-    mov [es:bx], byte COLOR
-    inc bx
-    inc si 
-    loop .print
-.end:
-    ret
-
-; ==================================================
 ; 09 - SNOOZE TODO
 ; ==================================================
 irt_09:
+    pusha                  
+    in al, KBD
+    cmp al, SNOOZE_KEY
+    jne .continue
+    cmp [cs:state], byte STATE_RINGING
+    jne .continue
+.snooze:
+    mov [cs:state], byte STATE_ACTIVE
+    call _snooze_time
 .continue:
+    popa
     push word [cs:loc_09_seg]
     push word [cs:loc_09_off]
     retf
@@ -323,6 +261,8 @@ irt_09:
 ; ==================================================
 %include "utils.asm"
 %include "int_util.asm"
+%include "graphics.asm"
+
 
 ; ==================================================
 ; Podaci
@@ -330,8 +270,6 @@ irt_09:
 
 segment .data
 
-dbg_time: db 'Vreme ovde', 0
-dbg_ring: db 'Ring ovde', 0
 
 err_unknown_function: db 'Nepoznat kod funkcije.', 0
 
@@ -351,10 +289,6 @@ indos_seg: dw 0
 indos_off: dw 0
 
 
-VID_SEG     equ     0B800h ; pocetak video segmenta
-START_POS   equ     320    ; startna vrednost ofseta za video, 3. red
-COLOR       equ     0DBh   ; boja: 1(blink) 101(magenta bgr) 1011(cyan fore)
-
 state: db 0
 STATE_ACTIVE equ 1
 STATE_RINGING equ 2
@@ -366,4 +300,6 @@ ticks_left: db 0
 TICKS_RINGING equ 100
 SPACE equ ' '
 
-ZEZ: db 'ZEZ TEST', 0
+ZEZ: db 'ZEZ TEST', 0                  
+SNOOZE_KEY equ 's'
+KBD            equ 060h   
