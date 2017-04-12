@@ -130,7 +130,7 @@ _alarm_start:
     ; aktiviraj alarm
     mov [state], byte STATE_ACTIVE
 
-    mov si, msg_tsr
+    mov si, msg_successful_install
     call _print
 
     ; go FULL TSR
@@ -194,5 +194,7 @@ err_unknown: db 'Nepoznata greska.', 0
 err_installed: db 'Greska pri instalaciji: TSR vec instaliran.', 0
 err_no_free_tsr: db 'Greska pri instalaciji: nema mesta za novi TSR.', 0
 err_unins_not_installed: db 'Greska pri deinstalaciji: TSR nije prisutan.', 0
+
+msg_successful_install: db 'Uspesno aktiviran alarm. S = snooze', 0
 
 msg_tsr: db 'Going full TSR.', 0

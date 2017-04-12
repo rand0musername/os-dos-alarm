@@ -240,7 +240,10 @@ irt_1C:
 ; 09 - SNOOZE TODO
 ; ==================================================
 irt_09:
-    pusha                  
+    pusha
+    mov ax, cs
+    mov ds, ax 
+    mov ax, 0            
     in al, KBD
     cmp al, SNOOZE_KEY
     jne .continue
@@ -301,5 +304,5 @@ TICKS_RINGING equ 100
 SPACE equ ' '
 
 ZEZ: db 'ZEZ TEST', 0                  
-SNOOZE_KEY equ 's'
+SNOOZE_KEY equ 159 ; 's'
 KBD            equ 060h   

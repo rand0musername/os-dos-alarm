@@ -44,20 +44,22 @@ _get_time_msg:
     ; pripremi string u koji se upisuje
     mov si, msg_time 
     mov bl, 10 ; uvek delimo sa 10
-    xor ax, ax ; 0 za svaki slucaj
     ; SATI
+    xor ax, ax ; 0 za svaki slucaj
     mov al, ch
     call _put_str
     ; dvotacka
     mov [si], byte ':'
     inc si
     ; MINUTI
+    xor ax, ax ; 0 za svaki slucaj
     mov al, cl
     call _put_str
     ; dvotacka
     mov [si], byte ':'
     inc si
     ; SEKUNDE
+    xor ax, ax ; 0 za svaki slucaj
     mov al, dh
     call _put_str
     popa

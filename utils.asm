@@ -144,20 +144,35 @@ _parse_time:
 
 _snooze_time:
     pusha
-    mov [cs:valid_time], byte 1
+
+    mov si, msg_debug
+    call _print
+
+    ; fetch time
     mov si, time
     mov bh, [si]
     inc si
     mov bl, [si]
     inc si
     mov dl, [si]
+
+    ; snooze time
     ; BH BL DL
     inc bl
     cmp bl, 60
-    jne .end
+    jne .write
     xor bl, bl
     inc bh
     ; ako bh postane 24 jbg
+
+.write:
+
+    ; upisi natrag
+    mov [si], dl
+    dec si
+    mov [si], bl
+    dec si
+    mov [si], bh
 .end:
     popa
     ret
@@ -207,6 +222,12 @@ _diff_time:
     cmp dl, dh
     jge .sub_s
     add dl, 60
+    ; is bl = 0
+    or bl, bl
+    jnz .regular
+    add bl, 60
+    sub bh, 1
+.regular:
     sub bl, 1
 .sub_s:
     sub dl, dh
