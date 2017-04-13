@@ -2,283 +2,188 @@
 ; Interapt hendleri
 ; ##################################################
 
-; TODO pomocna rutina koja instalira interapt
-
 segment .code
 
-
 ; ==================================================
-; Instalira interapte
-; ================================================== 
-
-_inst_all:
-    push es
-    push si
-    mov si, inst
-    call _print
-    mov ax, cs
-    mov ds, ax
-    call _inst_2F
-    call _inst_1C
-    call _inst_09
-    pop si
-    pop es
-    ret
-
-; ==================================================
-; Deinstalira interapte
-; ================================================== 
-
-_uninst_all:
-    push es
-    push si
-    mov si, uninst
-    call _print
-    ; es garantovan
-    mov ax, es
-    mov ds, ax
-    call _uninst_2F
-    call _uninst_1C
-    call _uninst_09
-    pop si
-    pop es
-    ret
-
-; ==================================================
-; 2F - MUX upis
-; ================================================== 
-
-_inst_2F:
-    cli
-    ; set ES = 0
-    xor ax, ax
-    mov es, ax
-    ; cuvanje stare rutine
-    mov bx, [es:2Fh*4+2]
-    mov [ds:loc_2F_seg], bx
-    mov bx, [es:2Fh*4]
-    mov [ds:loc_2F_off], bx
-    ; instalacija nase rutine
-    mov ax, cs
-    mov [es:2Fh*4+2], ax
-    mov bx, irt_2F
-    mov [es:2Fh*4], bx
-    sti
-    ret
-
-; ovo ne treba ovako, TSR ostaje TSR - treba free memorije etc...
-_uninst_2F:
-    ; vracanje stare rutine
-    cli
-    xor ax, ax
-    mov es, ax
-    mov ax, [ds:loc_2F_seg]
-    mov [es:2Fh*4+2], ax
-    mov dx, [ds:loc_2F_off]
-    mov [es:2Fh*4], dx
-    sti
-    ret
-
-
-; ==================================================
-; 1C - na svaki tajmer update
-; ================================================== 
-
-_inst_1C:
-    cli
-    ; set ES = 0
-    xor ax, ax
-    mov es, ax
-    ; cuvanje stare rutine
-    mov bx, [es:1Ch*4+2]
-    mov [ds:loc_1C_seg], bx
-    mov bx, [es:1Ch*4]
-    mov [ds:loc_1C_off], bx
-    ; instalacija nase rutine
-    mov ax, cs
-    mov [es:1Ch*4+2], ax
-    mov bx, irt_1C
-    mov [es:1Ch*4], bx
-    push ds
-    pop gs ; zasto ovo?
-    sti
-    ret
-
-_uninst_1C:
-    ; vracanje stare rutine
-    cli
-    xor ax, ax
-    mov es, ax
-    mov ax, [ds:loc_1C_seg]
-    mov [es:1Ch*4+2], ax
-    mov dx, [ds:loc_1C_off]
-    mov [es:1Ch*4], dx
-    sti
-    ret
-
-; ==================================================
-; 09 - keyboard za snooze
-; ================================================== 
-
-_inst_09:
-    cli
-    ; set ES = 0
-    xor ax, ax
-    mov es, ax
-    ; cuvanje stare rutine
-    mov bx, [es:09h*4+2]
-    mov [ds:loc_09_seg], bx
-    mov bx, [es:09h*4]
-    mov [ds:loc_09_off], bx
-    ; instalacija nase rutine
-    mov ax, cs
-    mov [es:09h*4+2], ax
-    mov bx, irt_09
-    mov [es:09h*4], bx
-    sti
-    ret
-
-_uninst_09:
-    ; vracanje stare rutine
-    cli
-    xor ax, ax
-    mov es, ax
-    mov ax, [ds:loc_09_seg]
-    mov [es:09h*4+2], ax
-    mov dx, [ds:loc_09_off]
-    mov [es:09h*4], dx
-    sti
-    ret
-
-
-; ==================================================
-; Zapravo rutine, ovo iznad sve moze da se skrati triput ako budem imao vremena
-; ==================================================
-
-
-; ==================================================
-; 2F
+; Interapt hendler za 2F - MUX
+; out (f0):
+;           di = signature
+;           al = FFh
+;           es = TSR segment
+; TODO: mozda treba ceo int 1Ch preseliti ovde u .f1?
+;       nije najjasnije kako se koristi 2F u kombinaciji sa interapt hendlerima
+;       ovako kako je sada odradjeno ne postoji neka jaka veza 2F Entry <=> 1C handler
 ; ==================================================
 irt_2F:
+    ; provera da li je id tacan
     cmp ah, [cs:loc_2F_id]
     jne .continue
+    ; odabir funkcije
     cmp al, 0
     je .f0
     mov si, err_unknown_function
     call _print
     jmp .continue
 .f0:
+    ; funkcija nula: "ping" - vracamo FFh i signature
     mov al, 0FFh
     mov di, signature
     mov dx, cs
-    mov es, dx
+    mov es, dx                          ; saljemo i segment u kom je TSR kroz es
     iret
+    ; nastavak po 2F lancu, pogresan handler
 .continue:
     push word [cs:loc_2F_seg]
     push word [cs:loc_2F_off]
     retf
-    ; mozda treba ceo int 1Ch preseliti ovde u .f1?
-
 
 ; ==================================================
-; 1C
+; Interapt hendler za 1C - tajmer
 ; ==================================================
 irt_1C:
     pusha
+    ; popravka za ds da bi uzimali podatke iz TSR segmenta
     mov ax, cs
     mov ds, ax
+    ; da li je alarm vec gotov
     cmp [cs:state], byte STATE_OVER
     je .end
+    ; da li alarm zvoni
     cmp [cs:state], byte STATE_RINGING
     je .ringing
 .active:
-    ; reentrancy
+    ; reentrancy, provera indos flaga
     mov ax, [cs:indos_seg]
     mov es, ax
     mov bx, [cs:indos_off]
     mov al, byte [es:bx]
     or al, al
-    jnz .end ; in use
-    ; you can go on
-    mov ah, 2Ch
+    jnz .end 
+    ; ne koriste se interapti, mozemo da nastavimo
+    mov ah, 2Ch                         ; uzimamo sistemsko vreme
     int 21h
     ; ch = sati sada, cl = min sada, dh = sekunde sada
-    call _diff_time
+    call _diff_time                     ; racunamo razliku izmedju alarma i sada
     ; ch = sati diff, cl = min diff, dh = sekunde diff
+    ; provera da li je vreme da alarm pocne da zvoni
     or ch, ch
-    jnz .draw_prep
+    jnz .draw
     or cl, cl
-    jnz .draw_prep
+    jnz .draw
     or dh, dh
-    jnz .draw_prep
-    ; START RINGING FROM NEXT TURN
+    jnz .draw
+    ; draw da zvoni od narednog ticka
     mov [cs:state], byte STATE_RINGING
     mov [cs:ticks_left], byte TICKS_RINGING
-.draw_prep:
+.draw:
+    ; crtamo odbrojavanje 
     call _clear_vid_mem
     call _print_time
     jmp .end
 .ringing:
+    ; alarm zvoni, smanjimo broj tickova do kraja
     mov al, [cs:ticks_left]
     or al, al
     jz .set_over
     dec al
     mov [cs:ticks_left], byte al
+    ; crtamo zvonjenje
     call _clear_vid_mem
     call _print_ring
     jmp .end
 .set_over:
+    ; kraj zvonjenja, menjamo stanje 
     mov [cs:state], byte STATE_OVER
-    ; TODO: da se sam deinstalira pa da ne mora stop
     call _clear_vid_mem
+    call _alarm_stop                    ; deinstaliramo alarm
     jmp .end
 .end:
     popa
     iret
 
 ; ==================================================
-; 09 - SNOOZE TODO
+; Interapt hendler za 09 - tastatura (snooze)
 ; ==================================================
 irt_09:
     pusha
     mov ax, cs
     mov ds, ax 
     mov ax, 0            
-    in al, KBD
+    in al, KBD                          ; da li je pritistnuto snooze dugme
     cmp al, SNOOZE_KEY
     jne .continue
-    cmp [cs:state], byte STATE_RINGING
+    cmp [cs:state], byte STATE_RINGING  ; da li alarm zvoni
     jne .continue
 .snooze:
-    mov [cs:state], byte STATE_ACTIVE
-    call _snooze_time
+    mov [cs:state], byte STATE_ACTIVE   ; stanje postaje aktivno
+    call _snooze_time                   ; dodajemo minut na vreme
 .continue:
+    ; predaje se kontrola starom 09 interaptu
     popa
     push word [cs:loc_09_seg]
     push word [cs:loc_09_off]
     retf
-    
 
 ; ==================================================
-; Importi
-; ==================================================
-%include "utils.asm"
-%include "int_util.asm"
-%include "graphics.asm"
-
+; Pomocna sabrutina koja trazi TSR sa zadatim signature
+; TODO: parametrizovati signature
+; out:
+;      al = 2 : nije nadjen, ah = neki prazan TSR_ID
+;      al = 1 : pronadjen, ah = TSR_ID gde se nalazi
+;      al = 0 : nije nadjen i nema slobodnih TSR slotova
+; ================================================== 
+; TODO: strlen
+_find_tsr_id:
+    mov cx, 0FFh                    ; trazimo po ovom id unazad
+    mov dx, 0                       ; u dx se cuva slobodno mesto
+.id_loop:
+    mov ah, cl                       
+    push cx                         ; moramo da sacuvamo cx
+    mov al, 0
+    int 2Fh                         ; trazimo odgovor od MUX interapta
+    pop cx
+    cmp al, 0                       ; da li smo dobili odgovor
+    je .no_response
+    ; ima odgovora, provera potpisa
+    push cx
+    mov cx, 6
+    mov ax, cs
+    mov ds, ax
+    mov si, signature
+    repe cmpsb                      ; poredi se signature sa DI (signature koji je vratio 2Fh)
+    pop cx
+    ; ako su stringovi jednaki nasli smo zeljeni TSR
+    je .found
+    loop .id_loop
+.no_response:
+    ; nema odgovora, trazimo dalje
+    mov dl, cl
+    loop .id_loop
+    jmp .not_found
+.found:
+    ; nadjen TSR
+    mov al, 1
+    mov ah, cl
+    ret
+.not_found:
+    ; nema TSR
+    or dl, dl
+    jz .no_free
+    ; ima mesta
+    mov al, 2
+    mov ah, dl
+    ret
+.no_free:
+    ; nema mesta
+    mov al, 0
+    ret
 
 ; ==================================================
 ; Podaci
 ; ==================================================
-
 segment .data
 
-
-err_unknown_function: db 'Nepoznat kod funkcije.', 0
-
-inst: db 'Instalirao sve.', 0
-uninst: db 'Deinstalirao sve.', 0
-
+; lokacije starih interapt hendlera
 loc_1C_seg: dw 0
 loc_1C_off: dw 0
 loc_09_seg: dw 0
@@ -286,23 +191,5 @@ loc_09_off: dw 0
 loc_2F_seg: dw 0
 loc_2F_off: dw 0
 
-loc_2F_id: db 0
-
-indos_seg: dw 0
-indos_off: dw 0
-
-
-state: db 0
-STATE_ACTIVE equ 1
-STATE_RINGING equ 2
-STATE_OVER equ 3
-
-ticks_left: db 0
-
-
-TICKS_RINGING equ 100
-SPACE equ ' '
-
-ZEZ: db 'ZEZ TEST', 0                  
-SNOOZE_KEY equ 159 ; 's'
-KBD            equ 060h   
+; lokacija tastature kao ulaznog uredjaja
+KBD         equ 060h 

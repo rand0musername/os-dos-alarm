@@ -2,78 +2,13 @@
 ; Pomocne funkcije
 ; ##################################################
 
-; ==================================================
-; Ispis inta na ekran (BIOS)
-; in:
-;      ax = int koji zelimo da se ispise
-; ================================================== 
-
-_print_int:
-    pusha
-    mov cx, 0           ; brojac cifara
-    mov bx, 10          ; delicemo sa 10
-.divide:
-    mov dx, 0           ; priprema za deljenje
-    div bx              ; ax:dx / bx = ax(dx)
-    push dx             ; ostatak na stack
-    inc cx              ; povecanje brojaca cifri
-    or ax, ax           ; provera da li ima jos cifara
-    jnz .divide
-.print:
-    pop ax
-    add al, ASCII_ZERO  ; zelimo da ispisemo char 0 a ne broj 0
-    mov ah, 0Eh         ; BIOS 10h: ah = 0eh (Teletype Mode), al = znak koji se ispisuje
-    int 10h             ; ispis
-    loop .print
-.end:
-    mov al, ' '                        
-    mov  ah, 0Eh                      ; BIOS 10h: ah = 0eh (Teletype Mode), al = znak koji se ispisuje
-    int  10h
-    popa
-    ret
-
-
-; ==================================================
-; Printa novi red
-; ================================================== 
-_newline:
-    pusha
-    mov al, 0Dh                        
-    mov  ah, 0Eh                      ; BIOS 10h: ah = 0eh (Teletype Mode), al = znak koji se ispisuje
-    int  10h
-    mov al, 0Ah                        
-    mov  ah, 0Eh                      ; BIOS 10h: ah = 0eh (Teletype Mode), al = znak koji se ispisuje
-    int  10h
-    popa
-    ret
-
-; ==================================================
-; Duzina stringa
-; in:
-;      si = string terminiran nulom
-; out:
-;      cx = duzina
-; ================================================== 
-
-_strlen:
-      pusha
-      cld
-      xor cx, cx
-.count:
-      lodsb                             ; ucitava znakove do nailaska prve nule
-      or   al, al                       ; ako smo dosli do kraja zavrsava metodu
-      jz  .end                         
-      inc cx
-.end:
-      popa
-      ret   
+segment .code
 
 ; ==================================================
 ; Ispis poruke na ekran (BIOS)
 ; in:
 ;      si = string terminiran nulom koji se ispisuje
 ; ================================================== 
-
 _print:
       pusha
       cld
@@ -81,7 +16,7 @@ _print:
       lodsb                             ; ucitava znakove do nailaska prve nule
       or   al, al                       ; ako smo dosli do kraja zavrsava metodu
       jz  .end                         
-      mov  ah, 0Eh                      ; BIOS 10h: ah = 0eh (Teletype Mode), al = znak koji se ispisuje
+      mov  ah, 0Eh                      ; ispis BIOS prekidom
       int  10h
       jmp .print_char     
 .end:
@@ -89,28 +24,68 @@ _print:
       ret    
 
 ; ==================================================
+; Ispis celog broja na ekran (BIOS)
+; in:
+;      ax = int koji treba ispisati
+; ================================================== 
+_print_int:
+    pusha
+    mov cx, 0           ; brojac cifara
+    mov bx, 10          ; delicemo uvek sa 10
+.divide:
+    mov dx, 0           ; priprema za deljenje
+    div bx              ; ax / bx = ah(al)
+    push dx             ; ostatak na stack
+    inc cx              ; povecanje brojaca cifri
+    or ax, ax           ; provera da li ima jos cifara
+    jnz .divide
+.print:
+    pop ax
+    add al, ASCII_ZERO  ; zelimo da ispisemo char 0 a ne broj 0
+    mov ah, 0Eh
+    int 10h             ; ispis BIOS prekidom
+    loop .print
+.end:
+    mov al, ' '         ; razmak na kraju                    
+    mov  ah, 0Eh                      
+    int  10h
+    popa
+    ret
+
+; ==================================================
+; Ispis novog reda
+; ================================================== 
+_print_newline:
+    pusha
+    mov al, 0Dh         ; CR        
+    mov  ah, 0Eh             
+    int  10h
+    mov al, 0Ah         ; LF                
+    mov  ah, 0Eh                 
+    int  10h
+    popa
+    ret
+
+; ==================================================
 ; Parsiranje vremena
 ; in:
-;      di = pocetak stringa vremena HH:MM:SS
+;      di = pocetak vremenskog stringa HH:MM:SS
 ; out:
 ;      time, time+1, time+2 = parsovano vreme
-;      valid_time = validno parsovano
+;      valid_time = marker koji oznacava da li je parsiranje uspelo
 ; ================================================== 
-
 _parse_time:
     mov si, time
-    mov [valid_time], byte 1
-
-    ; 3 puta parsiramo dve cifre
-.parse_hours:
+    mov [valid_time], byte 1            ; pretpostavimo da je parsiranje uspelo
+.parse_hours:                           ; parsiramo sate i proveravamo da li su u opsegu [0, 23]
     call _parse_2dig_int
     cmp al, 24 
     jl .write_hours
     jmp .fail
-.write_hours:
+.write_hours:                           ; upisujemo sate u memoriju
     mov [si], al
     inc si
-.parse_minutes:
+.parse_minutes:                         ; parsiramo minute i proveravamo da li su u opsegu [0, 59]
     cmp byte [di], ':'
     jne .fail
     inc di
@@ -118,10 +93,10 @@ _parse_time:
     cmp al, 60 
     jl .write_minutes
     jmp .fail
-.write_minutes:
+.write_minutes:                         ; upisujemo minute u memoriju
     mov [si], al
     inc si
-.parse_seconds:
+.parse_seconds:                         ; upisujemo sekunde i proveravamo da li su u opsegu [0, 59]
     cmp byte [di], ':'
     jne .fail
     inc di
@@ -129,45 +104,54 @@ _parse_time:
     cmp al, 60 
     jl .write_seconds
     jmp .fail
-.write_seconds:
+.write_seconds:                         ; upisujemo sekunde u memoriju
     mov [si], al
     inc si
     jmp .end
 .fail:
-    mov [valid_time], byte 0
+    mov [valid_time], byte 0            ; markiramo neuspeh
 .end:
     ret
 
-; ==================================================
-; Snuzovanje vremena
-; ================================================== 
 
+; ==================================================
+; Parsiranje dvocifrenog inta
+; in:
+;      di = pocetak stringa gde se nalazi broj
+; out:
+;      al = parsovani int
+;      di = prvi karakter iza kraja inta
+; ================================================== 
+_parse_2dig_int:
+    mov al, [di]                        ; uzimamo prvu cifru i mnozimo sa 10
+    sub al, ASCII_ZERO
+    mov bx, 10
+    mul bx
+    inc di                              ; dodajemo drugu cifru
+    add al, [di]
+    sub al, ASCII_ZERO
+    inc di                              ; pomeramo pokazivac
+    ret
+
+; ==================================================
+; Snoozovanje alarma za 60 sekundi
+; out:
+;      time, time+1, time+2 = povecano vreme
+; ================================================== 
 _snooze_time:
     pusha
-
-    mov si, msg_debug
-    call _print
-
-    ; fetch time
-    mov si, time
+    mov si, time                        ; uzimamo vreme iz memorije
     mov bh, [si]
     inc si
     mov bl, [si]
     inc si
     mov dl, [si]
-
-    ; snooze time
-    ; BH BL DL
-    inc bl
+    inc bl                              ; povecavamo minute za 1
     cmp bl, 60
     jne .write
     xor bl, bl
-    inc bh
-    ; ako bh postane 24 jbg
-
-.write:
-
-    ; upisi natrag
+    inc bh                              ; bh moze da postane 24, WONTFIX
+.write:                                 ; upisujemo novo vreme u memoriju
     mov [si], dl
     dec si
     mov [si], bl
@@ -178,53 +162,31 @@ _snooze_time:
     ret
 
 ; ==================================================
-; Parsiranje dvocifrenog inta
+; Racunanje razlike dva vremenska momenta, A i B
 ; in:
-;      di = pocetak inta
-; out:
-;      al = parsovani int
-;      di = iza kraja inta
-; ================================================== 
-
-_parse_2dig_int:
-    mov al, [di]
-    sub al, ASCII_ZERO
-    mov bx, 10
-    mul bx
-    inc di
-    add al, [di]
-    sub al, ASCII_ZERO
-    inc di
-    ret
-
-
-; ==================================================
-; Diffovanje vremena
-; in:
-;      ch = sati sada, cl = min sada, dh = sekunde sada
-;      time = sati sada, time+1 = min sada, time+2 = sekunde sada
-;      time je sigurno kasnije ili u isto vreme kao ch cl dh
+;      ch = satiA, cl = minA, dh = sekundeA (time now)
+;      time = satiB, time+1 = minB, time+2 = sekundeB (alarm)
+;      [time je sigurno kasnije ili u isto vreme kao now]
 ; out:
 ;      ch = sati diff, cl = min diff, dh = sekunde diff
 ; ================================================== 
-
 _diff_time:
-
+    ; ucitavamo vreme iz memorije u BH BL DL
     mov si, time
     mov bh, [si]
     inc si
     mov bl, [si]
     inc si
     mov dl, [si]
-    ; BH BL DL - CH CL DH
-
-    ; SECONDS
+    ; racuna se razlika BH BL DL - CH CL DH
+    ; oduzimamo sekunde
     cmp dl, dh
     jge .sub_s
+    ; potrebna je pozajmica
     add dl, 60
-    ; is bl = 0
     or bl, bl
     jnz .regular
+    ; potrebna je dupla pozajmica
     add bl, 60
     sub bh, 1
 .regular:
@@ -232,41 +194,17 @@ _diff_time:
 .sub_s:
     sub dl, dh
     mov dh, dl
-    ; MINUTES
+    ; oduzimamo minute
     cmp bl, cl
     jge .sub_m
+    ; pozajmica
     add bl, 60
     sub bh, 1
 .sub_m:
     sub bl, cl
     mov cl, bl
-    ; HOURS
+    ; oduzimamo sate
 .sub_h:
     sub bh, ch
     mov ch, bh
-
-
-    ;mov ah, 0
-    ;mov al, ch
-    ;call _print_int
-    ;mov al, cl
-    ;call _print_int
-    ;mov al, dh
-    ;call _print_int
-    ;call _newline
-
-
     ret
-
-
-
-; ==================================================
-; Podaci
-; ==================================================
-
-segment .data
-
-time: times 3 db 0
-time_rem: times 3 db 0
-valid_time: db 0
-msg_debug: db 'ZEZ', 0
