@@ -67,7 +67,7 @@ _print_newline:
     ret
 
 ; ==================================================
-; Parsiranje vremena
+; Parsiranje vremena (TODO: omoguciti alarm koji je sutradan)
 ; in:
 ;      di = pocetak vremenskog stringa HH:MM:SS
 ; out:
